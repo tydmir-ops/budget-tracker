@@ -66,17 +66,34 @@ export async function GET(req) {
   const anahtar = u.searchParams.get("anahtar");
   if (!anahtar) return new Response("anahtar gerekli", { status: 400 });
 
-  const { data, error } = await sb()
-    .from("depo")
-    .select("deger")
-    .eq("anahtar", anahtar)
-    .maybeSingle();
+  /* eq() filtresi yerine: listele + kod içinde eşleştir.
+     Listeleme sorgusunun satırı gördüğü kanıtlı; arayan gözü de aynı yapıyoruz. */
+  const { data: liste, error } = await sb().from("depo").select("anahtar, deger").limit(20);
 
   if (error) {
     console.error("depo GET hatası:", error);
     return new Response("veritabanı hatası: " + error.message, { status: 500 });
   }
-  return Response.json({ value: data ? data.deger : null });
+
+  const hedef = String(anahtar).trim();
+  const satir = (liste || []).find((x) => String(x.anahtar).trim() === hedef);
+
+  if (!satir) {
+    /* Bulunamadıysa kanıt aynı yanıtta: aranan ile depodakiler yan yana. */
+    return Response.json(
+      {
+        value: null,
+        aranan: hedef,
+        arananUzunluk: hedef.length,
+        depodakiAnahtarlar: (liste || []).map((x) => ({
+          anahtar: String(x.anahtar),
+          uzunluk: String(x.anahtar).length,
+        })),
+      },
+      { headers: { "cache-control": "no-store" } }
+    );
+  }
+  return Response.json({ value: satir.deger }, { headers: { "cache-control": "no-store" } });
 }
 
 /* --- birleştirme: id'li diziler birleşir, aynı id'de gelen (istemci) kazanır --- */
@@ -109,16 +126,17 @@ export async function PUT(req) {
   const tabanRev = Number(gelen.tabanRev) || 0; // istemcinin baz aldığı sürüm
   delete gelen.tabanRev;
 
-  const { data: mevcut, error: okumaHatasi } = await sb()
+  const { data: putListe, error: okumaHatasi } = await sb()
     .from("depo")
-    .select("deger")
-    .eq("anahtar", anahtar)
-    .maybeSingle();
+    .select("anahtar, deger")
+    .limit(20);
 
   if (okumaHatasi) {
     console.error("depo PUT okuma hatası:", okumaHatasi);
     return new Response("veritabanı hatası: " + okumaHatasi.message, { status: 500 });
   }
+  const putHedef = String(anahtar).trim();
+  const mevcut = (putListe || []).find((x) => String(x.anahtar).trim() === putHedef) || null;
 
   let sonuc = gelen;
   let yeniRev = 1;
