@@ -510,7 +510,7 @@ const CSS = `
 /* ================================================================== */
 
 const KEY = "ortak-butce-v1";
-const SURUM_ETIKETI = "s8"; // Ayarlar > Veri altında görünür; yayındaki kodu doğrulamak için
+const SURUM_ETIKETI = "s9"; // Ayarlar > Veri altında görünür; yayındaki kodu doğrulamak için
 const AY = ["Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"];
 const AY_UZUN = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
 
@@ -684,6 +684,11 @@ function gocur(ham) {
   d.taksitler = (d.taksitler || []).map((t) => ({ kartId: null, ...t, aylik: sayi(t.aylik), ay: sayi(t.ay) || 1 }));
   d.denklestirmeler = d.denklestirmeler || [];
   d.silinenler = d.silinenler && typeof d.silinenler === "object" && !Array.isArray(d.silinenler) ? d.silinenler : {};
+  /* mezar taşlılar hiçbir listede görünmez — hangi kaynaktan yüklenirse yüklensin */
+  ["kisiler", "kategoriler", "harcamalar", "sabitler", "gelirler", "kartlar", "taksitler", "planli", "birikim", "denklestirmeler"].forEach((k) => {
+    if (Array.isArray(d[k])) d[k] = d[k].filter((x) => !d.silinenler[x.id]);
+  });
+  if (!d.kisiler.length) d.kisiler = BASLANGIC.kisiler;
   d.rev = sayi(d.rev);
   d.surum = 3;
   return d;
