@@ -510,6 +510,7 @@ const CSS = `
 /* ================================================================== */
 
 const KEY = "ortak-butce-v1";
+const SURUM_ETIKETI = "s7"; // Ayarlar > Veri altında görünür; yayındaki kodu doğrulamak için
 const AY = ["Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"];
 const AY_UZUN = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
 
@@ -2827,7 +2828,7 @@ function Ayar({ d, yaz, sil, setD, otoDegisken }) {
         </label>
         {mesaj && <div className="kb-row-s" style={{ marginTop: 10, textAlign: "center" }}>{mesaj}</div>}
         <div className="kb-row-s" style={{ marginTop: 11, lineHeight: 1.6 }}>
-          Veriler kendi Supabase veritabanınızda tutulur; ev kodunu bilen herkes aynı kayıtları görür.
+          Veriler kendi Supabase veritabanınızda tutulur; ev kodunu bilen herkes aynı kayıtları görür. Uygulama sürümü: {SURUM_ETIKETI}
         </div>
       </div>
 
