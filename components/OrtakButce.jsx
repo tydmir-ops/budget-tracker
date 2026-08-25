@@ -686,20 +686,8 @@ function gocur(ham) {
   return d;
 }
 
-/* --- cihazlar arası birleştirme: id'li diziler birleşir, aynı id'de yerel kazanır --- */
-const DIZI_ALANLAR = ["kisiler", "kategoriler", "harcamalar", "sabitler", "gelirler", "kartlar", "taksitler", "planli", "birikim", "denklestirmeler"];
-function birlestir(yerel, uzak) {
-  const dizi = (a, b) => {
-    const m = new Map((b || []).map((x) => [x.id, x]));
-    (a || []).forEach((x) => m.set(x.id, x));
-    return [...m.values()];
-  };
-  const out = { ...uzak, ...yerel };
-  DIZI_ALANLAR.forEach((k) => { out[k] = dizi(yerel[k], uzak[k]); });
-  return out;
-}
-
-/* --- sabit gider yardımcıları --- */
+/* --- sabit gider yardımcıları ---
+   (cihazlar arası birleştirme sunucuda, /api/depo PUT içinde yapılır) */
 const sabitAktif = (s, ym) =>
   fark(s.baslangic || "1970-01", ym) >= 0 && (!s.bitis || fark(ym, s.bitis) >= 0);
 
@@ -906,32 +894,17 @@ export default function OrtakButce() {
     setDurum("busy"); // debounce beklerken de "kaydediliyor" görünsün — "eşlendi" yanılgısı olmasın
     const t = setTimeout(async () => {
       try {
-        /* Depo OKUNAMAZSA yazma — boş sanıp ezme riskine girme. */
-        let depodaki = null;
-        try {
-          const r = await depo.get(KEY);
-          if (r?.value) depodaki = gocur(JSON.parse(r.value));
-        } catch {
-          setDurum("err");
-          return;
-        }
-        if (depodaki && depodaki.rev !== rev.current) {
-          /* Başka cihaz arada yazmış: kilitleme yok — kayıtları birleştir.
-             Diziler id üzerinden birleşir, kimse kimseninkini ezemez. */
-          const b = gocur(birlestir(guncelD.current, depodaki));
-          const yeniRev = depodaki.rev + 1;
-          await depo.set(KEY, JSON.stringify({ ...b, rev: yeniRev }));
-          rev.current = yeniRev;
-          kirli.current = false;
-          ilk.current = true; // birleşik hali ekrana koy, yeniden kayıt tetikleme
-          setD(b);
-          setDurum("ok");
-          return;
-        }
-        const yeniRev = rev.current + 1;
-        await depo.set(KEY, JSON.stringify({ ...guncelD.current, rev: yeniRev }));
-        rev.current = yeniRev;
+        /* Birleştirme SUNUCUDA: istek hangi cihazdan, ne kadar bayat bir
+           kopyadan gelirse gelsin, sunucu depodakiyle birleştirir.
+           Hiçbir yazma bir başkasının kaydını ezemez. */
+        const r = await depo.set(KEY, JSON.stringify({ ...guncelD.current, tabanRev: rev.current }));
+        rev.current = sayi(r?.rev) || rev.current + 1;
         kirli.current = false;
+        if (r?.deger) {
+          /* sunucu birleştirdiyse birleşik hali ekrana al */
+          ilk.current = true;
+          setD(gocur(JSON.parse(r.deger)));
+        }
         setDurum("ok");
       } catch { setDurum("err"); }
     }, 400);
@@ -944,16 +917,14 @@ export default function OrtakButce() {
     const bosalt = (e) => {
       if (!kirli.current) return;
       if (e.type === "visibilitychange" && document.visibilityState !== "hidden") return;
-      const yeniRev = rev.current + 1;
       try {
         fetch("/api/depo", {
           method: "PUT",
           keepalive: true,
           headers: { "content-type": "application/json", "x-ev-kodu": evKodu() },
-          body: JSON.stringify({ anahtar: KEY, deger: JSON.stringify({ ...guncelD.current, rev: yeniRev }) }),
+          body: JSON.stringify({ anahtar: KEY, deger: JSON.stringify({ ...guncelD.current, tabanRev: rev.current }) }),
         });
-        rev.current = yeniRev;
-        kirli.current = false;
+        kirli.current = false; // sunucu tabanRev'e bakar; bayatsa birleştirir, asla ezmez
       } catch { /* son çare — sessiz geç */ }
     };
     document.addEventListener("visibilitychange", bosalt);
