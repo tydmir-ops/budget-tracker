@@ -510,7 +510,7 @@ const CSS = `
 /* ================================================================== */
 
 const KEY = "ortak-butce-v1";
-const SURUM_ETIKETI = "s7"; // Ayarlar > Veri altında görünür; yayındaki kodu doğrulamak için
+const SURUM_ETIKETI = "s8"; // Ayarlar > Veri altında görünür; yayındaki kodu doğrulamak için
 const AY = ["Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"];
 const AY_UZUN = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
 
@@ -619,6 +619,7 @@ const BASLANGIC = {
   taksitler: [],
   gelirler: [],
   denklestirmeler: [],
+  silinenler: {}, // silinen kayıt kimlikleri — birleşmelerde dirilmeyi önler
 };
 
 /* --- göç: v1 (iki isim, string sayılar) → v3 --- */
@@ -682,6 +683,7 @@ function gocur(ham) {
   d.planli = (d.planli || []).map((p) => ({ ...p, tutar: sayi(p.tutar) }));
   d.taksitler = (d.taksitler || []).map((t) => ({ kartId: null, ...t, aylik: sayi(t.aylik), ay: sayi(t.ay) || 1 }));
   d.denklestirmeler = d.denklestirmeler || [];
+  d.silinenler = d.silinenler && typeof d.silinenler === "object" && !Array.isArray(d.silinenler) ? d.silinenler : {};
   d.rev = sayi(d.rev);
   d.surum = 3;
   return d;
@@ -969,7 +971,14 @@ export default function OrtakButce() {
   /* #6 — geri alınabilir silme */
   const sil = (parca, mesaj) => {
     yedek.current = d;
-    yaz(parca);
+    /* mezar taşları: silinen kimlikler işaretlenir, birleşmede dirilmezler */
+    const olen = { ...(d.silinenler || {}) };
+    Object.keys(parca).forEach((alan) => {
+      if (!Array.isArray(parca[alan]) || !Array.isArray(d[alan])) return;
+      const kalan = new Set(parca[alan].map((x) => x.id));
+      d[alan].forEach((x) => { if (x.id && !kalan.has(x.id)) olen[x.id] = Date.now(); });
+    });
+    yaz({ ...parca, silinenler: olen });
     setToast(mesaj || "Silindi");
     clearTimeout(toastZaman.current);
     toastZaman.current = setTimeout(() => setToast(null), 7000);
