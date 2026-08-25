@@ -96,16 +96,19 @@ export async function GET(req) {
   return Response.json({ value: satir.deger }, { headers: { "cache-control": "no-store" } });
 }
 
-/* --- birleştirme: id'li diziler birleşir, aynı id'de gelen (istemci) kazanır --- */
+/* --- birleştirme: id'li diziler birleşir, aynı id'de gelen (istemci) kazanır.
+       Mezar taşları (silinenler): silinen kimlikler asla geri dirilmez. --- */
 const DIZI_ALANLAR = ["kisiler", "kategoriler", "harcamalar", "sabitler", "gelirler", "kartlar", "taksitler", "planli", "birikim", "denklestirmeler"];
 function birlestir(gelen, depodaki) {
+  const olen = { ...(depodaki?.silinenler || {}), ...(gelen?.silinenler || {}) };
   const dizi = (a, b) => {
     const m = new Map((b || []).map((x) => [x.id, x]));
     (a || []).forEach((x) => m.set(x.id, x));
-    return [...m.values()];
+    return [...m.values()].filter((x) => !olen[x.id]);
   };
   const out = { ...depodaki, ...gelen };
   DIZI_ALANLAR.forEach((k) => { out[k] = dizi(gelen[k], depodaki[k]); });
+  out.silinenler = olen;
   return out;
 }
 
@@ -123,13 +126,11 @@ export async function PUT(req) {
   try { gelen = JSON.parse(deger); }
   catch { return new Response("deger geçerli JSON değil", { status: 400 }); }
 
-  /* İstemcinin baz aldığı sürüm. Geriye uyumluluk: eski istemciler tabanRev
-     göndermez ama hedef rev gönderir — tabanları (rev - 1) demektir. Böylece
-     bayat kod kopyaları bile yanlışlıkla birleştirme moduna düşmez. */
-  const tabanRev =
-    gelen.tabanRev !== undefined
-      ? Number(gelen.tabanRev) || 0
-      : Math.max((Number(gelen.rev) || 1) - 1, 0);
+  /* Eski istemciler tabanRev göndermez — yazmaları REDDEDİLİR.
+     Arka planda unutulmuş bayat kopyalar depoya bir daha dokunamaz. */
+  if (gelen.tabanRev === undefined)
+    return new Response("Bu cihazdaki uygulama sürümü eski — sayfayı yenileyip tekrar deneyin.", { status: 409 });
+  const tabanRev = Number(gelen.tabanRev) || 0;
   delete gelen.tabanRev;
 
   const { data: putListe, error: okumaHatasi } = await sb()
