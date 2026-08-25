@@ -1,12 +1,23 @@
 import { createClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
+export const fetchCache = "force-no-store"; // Next'in veri önbelleği KAPALI
+export const revalidate = 0;
 
+/* KÖK NEDEN DÜZELTMESİ: Next.js, sunucu tarafındaki fetch'leri (Supabase
+   okumaları dahil) varsayılan olarak önbelleğe alabiliyor — yazmalar gerçek
+   veritabanına giderken okumalar donmuş eski yanıtlara gidiyordu.
+   Burada hem rota düzeyinde hem istek düzeyinde önbellek tamamen kapatılır. */
 const sb = () =>
   createClient(
     (process.env.SUPABASE_URL || "").replace(/\/+$/, ""),
     process.env.SUPABASE_SERVICE_ROLE_KEY,
-    { auth: { persistSession: false } }
+    {
+      auth: { persistSession: false },
+      global: {
+        fetch: (url, secenekler = {}) => fetch(url, { ...secenekler, cache: "no-store" }),
+      },
+    }
   );
 
 /* GET için ev kodu, teşhis kolaylığı olsun diye ?kod= ile de kabul edilir. */
@@ -54,7 +65,7 @@ export async function GET(req) {
       });
     } catch (e) { hata = String(e); }
     return Response.json({
-      rotaSurumu: "r10", // sunucu kodunun sürüm damgası
+      rotaSurumu: "r11", // sunucu kodunun sürüm damgası
       supabaseUrl: url,
       anahtarTuru: tur,
       anahtarIlkKarakterler: key.slice(0, 18),
