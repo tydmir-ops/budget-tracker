@@ -54,6 +54,7 @@ export async function GET(req) {
       });
     } catch (e) { hata = String(e); }
     return Response.json({
+      rotaSurumu: "r9", // sunucu kodunun sürüm damgası
       supabaseUrl: url,
       anahtarTuru: tur,
       anahtarIlkKarakterler: key.slice(0, 18),
