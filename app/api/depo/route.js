@@ -54,7 +54,7 @@ export async function GET(req) {
       });
     } catch (e) { hata = String(e); }
     return Response.json({
-      rotaSurumu: "r9", // sunucu kodunun sürüm damgası
+      rotaSurumu: "r10", // sunucu kodunun sürüm damgası
       supabaseUrl: url,
       anahtarTuru: tur,
       anahtarIlkKarakterler: key.slice(0, 18),
@@ -162,6 +162,13 @@ export async function PUT(req) {
       birlesti = true;
     }
   }
+
+  /* Mezar taşı süzgeci HER yazmada uygulanır — düz yazma dahil.
+     Silinmiş bir kimlik depoya hiçbir yoldan geri giremez. */
+  const olenSon = sonuc.silinenler || {};
+  DIZI_ALANLAR.forEach((k) => {
+    sonuc[k] = (sonuc[k] || []).filter((x) => !olenSon[x.id]);
+  });
 
   sonuc.rev = yeniRev;
 
