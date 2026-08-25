@@ -3,9 +3,11 @@ import { createClient } from "@supabase/supabase-js";
 export const dynamic = "force-dynamic";
 
 const sb = () =>
-  createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
-    auth: { persistSession: false },
-  });
+  createClient(
+    (process.env.SUPABASE_URL || "").replace(/\/+$/, ""),
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    { auth: { persistSession: false } }
+  );
 
 /* GET için ev kodu, teşhis kolaylığı olsun diye ?kod= ile de kabul edilir. */
 const yetkili = (req, kodParam) => {
@@ -35,17 +37,28 @@ export async function GET(req) {
       : key
       ? "bilinmeyen biçim"
       : "(tanımsız)";
-    let satirSayisi = null, hata = null;
+    let satirSayisi = null, satirlar = null, hata = null;
     try {
       const { count, error } = await sb().from("depo").select("*", { count: "exact", head: true });
       if (error) hata = error.message;
       else satirSayisi = count;
+      const { data } = await sb().from("depo").select("anahtar, deger").limit(5);
+      satirlar = (data || []).map((x) => {
+        let rev = null, harcama = null;
+        try {
+          const j = JSON.parse(x.deger);
+          rev = j.rev ?? null;
+          harcama = Array.isArray(j.harcamalar) ? j.harcamalar.length : null;
+        } catch { /* çözümlemeye gerek yok */ }
+        return { anahtar: JSON.stringify(x.anahtar), uzunluk: x.anahtar.length, rev, harcamaSayisi: harcama };
+      });
     } catch (e) { hata = String(e); }
     return Response.json({
       supabaseUrl: url,
       anahtarTuru: tur,
       anahtarIlkKarakterler: key.slice(0, 18),
       depoSatirSayisi: satirSayisi,
+      sunucununGorduguSatirlar: satirlar,
       hata,
     });
   }
