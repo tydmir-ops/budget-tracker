@@ -22,6 +22,34 @@ export async function GET(req) {
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY)
     return new Response("SUPABASE_URL veya SUPABASE_SERVICE_ROLE_KEY tanımsız", { status: 500 });
 
+  /* Teşhis modu: sunucu hangi veritabanına, hangi anahtarla bakıyor? */
+  if (u.searchParams.get("teshis") === "1") {
+    const url = process.env.SUPABASE_URL || "(tanımsız)";
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+    const tur = key.startsWith("sb_secret_")
+      ? "sb_secret — DOĞRU tür"
+      : key.startsWith("sb_publishable_")
+      ? "sb_publishable — YANLIŞ: okumalar boş döner, yazmalar reddedilir"
+      : key.startsWith("eyJ")
+      ? "JWT — service_role ise doğru, anon ise yanlış"
+      : key
+      ? "bilinmeyen biçim"
+      : "(tanımsız)";
+    let satirSayisi = null, hata = null;
+    try {
+      const { count, error } = await sb().from("depo").select("*", { count: "exact", head: true });
+      if (error) hata = error.message;
+      else satirSayisi = count;
+    } catch (e) { hata = String(e); }
+    return Response.json({
+      supabaseUrl: url,
+      anahtarTuru: tur,
+      anahtarIlkKarakterler: key.slice(0, 18),
+      depoSatirSayisi: satirSayisi,
+      hata,
+    });
+  }
+
   const anahtar = u.searchParams.get("anahtar");
   if (!anahtar) return new Response("anahtar gerekli", { status: 400 });
 
