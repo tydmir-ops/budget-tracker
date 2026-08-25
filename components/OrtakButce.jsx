@@ -860,6 +860,9 @@ export default function OrtakButce() {
   const ilk = useRef(true);
   const toastZaman = useRef(null);
   const rev = useRef(0);
+  const kirli = useRef(false);   // kaydedilmemiş değişiklik var mı
+  const guncelD = useRef(d);     // en güncel state'e ref (flush için)
+  guncelD.current = d;
 
   useEffect(() => {
     (async () => {
@@ -880,10 +883,12 @@ export default function OrtakButce() {
     if (!yuklendi) return;
     if (ilk.current) { ilk.current = false; return; }
     if (cakisma) return; // çakışma çözülene kadar üzerine yazma
+    kirli.current = true;
+    setDurum("busy"); // debounce beklerken de "kaydediliyor" görünsün — "eşlendi" yanılgısı olmasın
     const t = setTimeout(async () => {
-      setDurum("busy");
       try {
-        /* yazmadan önce sürüm kontrolü: başka cihaz/sekme yazdıysa ezme */
+        /* yazmadan önce sürüm kontrolü: başka cihaz/sekme yazdıysa ezme.
+           Depo OKUNAMAZSA da yazma — boş sanıp ezme riskine girme. */
         try {
           const r = await depo.get(KEY);
           if (r?.value && sayi(JSON.parse(r.value).rev) !== rev.current) {
@@ -891,15 +896,45 @@ export default function OrtakButce() {
             setDurum("err");
             return;
           }
-        } catch { /* depo boş — ilk kayıt */ }
+        } catch {
+          setDurum("err");
+          return;
+        }
         const yeniRev = rev.current + 1;
-        await depo.set(KEY, JSON.stringify({ ...d, rev: yeniRev }));
+        await depo.set(KEY, JSON.stringify({ ...guncelD.current, rev: yeniRev }));
         rev.current = yeniRev;
+        kirli.current = false;
         setDurum("ok");
       } catch { setDurum("err"); }
-    }, 500);
+    }, 400);
     return () => clearTimeout(t);
   }, [d, yuklendi, cakisma]);
+
+  /* Sayfa kapanır/arkaya alınırken bekleyen kayıt varsa hemen gönder.
+     keepalive: tarayıcı sayfa kapansa bile isteği tamamlamaya çalışır. */
+  useEffect(() => {
+    const bosalt = (e) => {
+      if (!kirli.current) return;
+      if (e.type === "visibilitychange" && document.visibilityState !== "hidden") return;
+      const yeniRev = rev.current + 1;
+      try {
+        fetch("/api/depo", {
+          method: "PUT",
+          keepalive: true,
+          headers: { "content-type": "application/json", "x-ev-kodu": evKodu() },
+          body: JSON.stringify({ anahtar: KEY, deger: JSON.stringify({ ...guncelD.current, rev: yeniRev }) }),
+        });
+        rev.current = yeniRev;
+        kirli.current = false;
+      } catch { /* son çare — sessiz geç */ }
+    };
+    document.addEventListener("visibilitychange", bosalt);
+    window.addEventListener("pagehide", bosalt);
+    return () => {
+      document.removeEventListener("visibilitychange", bosalt);
+      window.removeEventListener("pagehide", bosalt);
+    };
+  }, []);
 
   const yaz = (parca) => setD((o) => ({ ...o, ...parca }));
 
