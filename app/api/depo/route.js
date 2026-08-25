@@ -79,6 +79,19 @@ export async function GET(req) {
   return Response.json({ value: data ? data.deger : null });
 }
 
+/* --- birleştirme: id'li diziler birleşir, aynı id'de gelen (istemci) kazanır --- */
+const DIZI_ALANLAR = ["kisiler", "kategoriler", "harcamalar", "sabitler", "gelirler", "kartlar", "taksitler", "planli", "birikim", "denklestirmeler"];
+function birlestir(gelen, depodaki) {
+  const dizi = (a, b) => {
+    const m = new Map((b || []).map((x) => [x.id, x]));
+    (a || []).forEach((x) => m.set(x.id, x));
+    return [...m.values()];
+  };
+  const out = { ...depodaki, ...gelen };
+  DIZI_ALANLAR.forEach((k) => { out[k] = dizi(gelen[k], depodaki[k]); });
+  return out;
+}
+
 export async function PUT(req) {
   if (!yetkili(req, null)) return new Response("yetkisiz", { status: 401 });
 
@@ -89,13 +102,51 @@ export async function PUT(req) {
   if (!anahtar || typeof deger !== "string")
     return new Response("anahtar ve deger gerekli", { status: 400 });
 
+  let gelen;
+  try { gelen = JSON.parse(deger); }
+  catch { return new Response("deger geçerli JSON değil", { status: 400 }); }
+
+  const tabanRev = Number(gelen.tabanRev) || 0; // istemcinin baz aldığı sürüm
+  delete gelen.tabanRev;
+
+  const { data: mevcut, error: okumaHatasi } = await sb()
+    .from("depo")
+    .select("deger")
+    .eq("anahtar", anahtar)
+    .maybeSingle();
+
+  if (okumaHatasi) {
+    console.error("depo PUT okuma hatası:", okumaHatasi);
+    return new Response("veritabanı hatası: " + okumaHatasi.message, { status: 500 });
+  }
+
+  let sonuc = gelen;
+  let yeniRev = 1;
+  let birlesti = false;
+
+  if (mevcut?.deger) {
+    let depodaki = null;
+    try { depodaki = JSON.parse(mevcut.deger); } catch { /* bozuksa gelen kazanır */ }
+    const depoRev = Number(depodaki?.rev) || 0;
+    yeniRev = depoRev + 1;
+    if (depodaki && tabanRev !== depoRev) {
+      /* İstemci bayat bir sürümü baz almış: EZME YOK — birleştir.
+         Hiçbir yazma bir başkasının kaydını silemez. */
+      sonuc = birlestir(gelen, depodaki);
+      birlesti = true;
+    }
+  }
+
+  sonuc.rev = yeniRev;
+
   const { error } = await sb()
     .from("depo")
-    .upsert({ anahtar, deger, guncelleme: new Date().toISOString() });
+    .upsert({ anahtar, deger: JSON.stringify(sonuc), guncelleme: new Date().toISOString() });
 
   if (error) {
     console.error("depo PUT hatası:", error);
     return new Response("veritabanı hatası: " + error.message, { status: 500 });
   }
-  return Response.json({ ok: true });
+  /* Birleştirme olduysa birleşik hali de dön — istemci ekranını anında eşitler. */
+  return Response.json({ ok: true, rev: yeniRev, deger: birlesti ? JSON.stringify(sonuc) : undefined });
 }
