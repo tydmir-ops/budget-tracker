@@ -923,6 +923,7 @@ export default function OrtakButce() {
           await depo.set(KEY, JSON.stringify({ ...b, rev: yeniRev }));
           rev.current = yeniRev;
           kirli.current = false;
+          ilk.current = true; // birleşik hali ekrana koy, yeniden kayıt tetikleme
           setD(b);
           setDurum("ok");
           return;
@@ -960,6 +961,34 @@ export default function OrtakButce() {
     return () => {
       document.removeEventListener("visibilitychange", bosalt);
       window.removeEventListener("pagehide", bosalt);
+    };
+  }, []);
+
+  /* Uygulama öne gelince depodan taze veriyi çek.
+     iOS'ta ana ekrandan "yeniden açmak" sayfayı çoğu kez yeniden yüklemez,
+     dondurulmuş hali sürdürür — bu efekt bayat ekran sorununu kökten çözer. */
+  useEffect(() => {
+    const tazele = async () => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+      if (kirli.current) return; // bekleyen yerel değişiklik varsa kayıt akışı birleştirir
+      try {
+        const r = await depo.get(KEY);
+        if (r?.value) {
+          const ham = JSON.parse(r.value);
+          if (sayi(ham.rev) !== rev.current) {
+            rev.current = sayi(ham.rev);
+            ilk.current = true; // bu setD kayıt tetiklemesin — veri zaten sunucudan geldi
+            setD(gocur(ham));
+            setDurum("ok");
+          }
+        }
+      } catch { /* görünürlük yenilemesi sessizce geçebilir; sonraki denemede tazelenir */ }
+    };
+    document.addEventListener("visibilitychange", tazele);
+    window.addEventListener("focus", tazele);
+    return () => {
+      document.removeEventListener("visibilitychange", tazele);
+      window.removeEventListener("focus", tazele);
     };
   }, []);
 
