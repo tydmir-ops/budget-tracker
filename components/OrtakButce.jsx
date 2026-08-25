@@ -686,6 +686,19 @@ function gocur(ham) {
   return d;
 }
 
+/* --- cihazlar arası birleştirme: id'li diziler birleşir, aynı id'de yerel kazanır --- */
+const DIZI_ALANLAR = ["kisiler", "kategoriler", "harcamalar", "sabitler", "gelirler", "kartlar", "taksitler", "planli", "birikim", "denklestirmeler"];
+function birlestir(yerel, uzak) {
+  const dizi = (a, b) => {
+    const m = new Map((b || []).map((x) => [x.id, x]));
+    (a || []).forEach((x) => m.set(x.id, x));
+    return [...m.values()];
+  };
+  const out = { ...uzak, ...yerel };
+  DIZI_ALANLAR.forEach((k) => { out[k] = dizi(yerel[k], uzak[k]); });
+  return out;
+}
+
 /* --- sabit gider yardımcıları --- */
 const sabitAktif = (s, ym) =>
   fark(s.baslangic || "1970-01", ym) >= 0 && (!s.bitis || fark(ym, s.bitis) >= 0);
@@ -856,6 +869,7 @@ export default function OrtakButce() {
   const [heroMod, setHeroMod] = useState(0);
   const [toast, setToast] = useState(null);
   const [cakisma, setCakisma] = useState(false);
+  const [acilisHata, setAcilisHata] = useState(false);
   const yedek = useRef(null);
   const ilk = useRef(true);
   const toastZaman = useRef(null);
@@ -864,20 +878,25 @@ export default function OrtakButce() {
   const guncelD = useRef(d);     // en güncel state'e ref (flush için)
   guncelD.current = d;
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const r = await depo.get(KEY);
-        if (r?.value) {
-          const ham = JSON.parse(r.value);
-          rev.current = sayi(ham.rev);
-          setD(gocur(ham));
-        }
-      } catch { /* ilk açılış */ }
+  const yukle = async () => {
+    setAcilisHata(false);
+    try {
+      const r = await depo.get(KEY);
+      if (r?.value) {
+        const ham = JSON.parse(r.value);
+        rev.current = sayi(ham.rev);
+        setD(gocur(ham));
+      }
       setDurum("ok");
       setYuklendi(true);
-    })();
-  }, []);
+    } catch {
+      /* sunucuya ulaşılamadı: boş ekranla yanıltma, tekrar dene ekranı göster */
+      setDurum("err");
+      setAcilisHata(true);
+    }
+  };
+
+  useEffect(() => { yukle(); }, []);
 
   useEffect(() => {
     if (!yuklendi) return;
@@ -887,17 +906,25 @@ export default function OrtakButce() {
     setDurum("busy"); // debounce beklerken de "kaydediliyor" görünsün — "eşlendi" yanılgısı olmasın
     const t = setTimeout(async () => {
       try {
-        /* yazmadan önce sürüm kontrolü: başka cihaz/sekme yazdıysa ezme.
-           Depo OKUNAMAZSA da yazma — boş sanıp ezme riskine girme. */
+        /* Depo OKUNAMAZSA yazma — boş sanıp ezme riskine girme. */
+        let depodaki = null;
         try {
           const r = await depo.get(KEY);
-          if (r?.value && sayi(JSON.parse(r.value).rev) !== rev.current) {
-            setCakisma(true);
-            setDurum("err");
-            return;
-          }
+          if (r?.value) depodaki = gocur(JSON.parse(r.value));
         } catch {
           setDurum("err");
+          return;
+        }
+        if (depodaki && depodaki.rev !== rev.current) {
+          /* Başka cihaz arada yazmış: kilitleme yok — kayıtları birleştir.
+             Diziler id üzerinden birleşir, kimse kimseninkini ezemez. */
+          const b = gocur(birlestir(guncelD.current, depodaki));
+          const yeniRev = depodaki.rev + 1;
+          await depo.set(KEY, JSON.stringify({ ...b, rev: yeniRev }));
+          rev.current = yeniRev;
+          kirli.current = false;
+          setD(b);
+          setDurum("ok");
           return;
         }
         const yeniRev = rev.current + 1;
@@ -1065,8 +1092,18 @@ export default function OrtakButce() {
     return (
       <div className="kb">
         <style>{CSS}</style>
-        <div className="kb-frame" style={{ alignItems: "center", justifyContent: "center" }}>
-          <div className="kb-empty" style={{ border: "none", background: "none" }}>Yükleniyor…</div>
+        <div className="kb-frame" style={{ alignItems: "center", justifyContent: "center", padding: 24 }}>
+          {acilisHata ? (
+            <div className="kb-card" style={{ textAlign: "center", width: "100%", maxWidth: 300 }}>
+              <div className="kb-row-t" style={{ marginBottom: 6 }}>Veriye ulaşılamadı</div>
+              <div className="kb-row-s" style={{ marginBottom: 14, lineHeight: 1.5 }}>
+                Kayıtların sunucuda güvende. Bağlantıyı kontrol edip tekrar dene.
+              </div>
+              <button className="kb-btn" onClick={yukle}>Tekrar dene</button>
+            </div>
+          ) : (
+            <div className="kb-empty" style={{ border: "none", background: "none", boxShadow: "none" }}>Yükleniyor…</div>
+          )}
         </div>
       </div>
     );
