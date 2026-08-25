@@ -123,7 +123,13 @@ export async function PUT(req) {
   try { gelen = JSON.parse(deger); }
   catch { return new Response("deger geçerli JSON değil", { status: 400 }); }
 
-  const tabanRev = Number(gelen.tabanRev) || 0; // istemcinin baz aldığı sürüm
+  /* İstemcinin baz aldığı sürüm. Geriye uyumluluk: eski istemciler tabanRev
+     göndermez ama hedef rev gönderir — tabanları (rev - 1) demektir. Böylece
+     bayat kod kopyaları bile yanlışlıkla birleştirme moduna düşmez. */
+  const tabanRev =
+    gelen.tabanRev !== undefined
+      ? Number(gelen.tabanRev) || 0
+      : Math.max((Number(gelen.rev) || 1) - 1, 0);
   delete gelen.tabanRev;
 
   const { data: putListe, error: okumaHatasi } = await sb()
